@@ -1,0 +1,143 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>Route unit test</title>
+<script language="javascript" type="text/javascript">
+  CLOSURE_NO_DEPS = true;
+</script>
+<script language="javascript" type="text/javascript" src="../closure/closure/goog/base.js"></script>
+<script language="javascript" type="text/javascript" src="../../compiled/deps.js"></script>
+<script language="javascript" type="text/javascript">
+  goog.require('jms.routing.Route');
+  goog.require('goog.testing.jsunit');
+  goog.require('goog.object');
+  goog.require('goog.debug');
+</script>
+</head>
+<body>
+<script language="javascript" type="text/javascript">
+  function createRoute(hash, opt_defaults, opt_requirements, opt_options) {
+    return new jms.routing.Route(hash, opt_defaults, opt_requirements, opt_options);
+  }
+
+  function testRouteMatchesHash()
+  {
+    // check extra parameters
+    var route = createRoute(":module/:action");
+    assertObjectEquals({module: "section", action: "list", p: "1"},
+      route.matchesHash("section/list/p/1"));
+    
+    var defaults = {module: 'home', action: 'test'};
+    var route = createRoute("", defaults);
+    assertFalse(route.matchesHash("test"));
+    assertObjectEquals(defaults, route.matchesHash(""));
+
+    var route = createRoute(":module/:action");
+    assertFalse(route.matchesHash("asdf"));
+    assertObjectEquals({module: "test", action: "test"},
+      route.matchesHash("test/test"));
+
+    var route = createRoute("section/:page", {module: "test", action: "index"}, {page: "(\\d+)"});
+    assertFalse(route.matchesHash("section/ddsgsdf"));
+    assertObjectEquals({module: "test", action: "index", page: "445"},
+      route.matchesHash("section/445"));
+    
+    // a more complex example
+    var route = createRoute("users", {module: "users", action: "index", page: "1"});
+    assertObjectEquals({
+      module: "users",
+      action: "index",
+      page: "1",
+      sortOrder: "desc",
+      sortField: "email"
+    }, route.matchesHash("users/sortOrder/desc/sortField/email"));
+    
+    // check that the defaults are not changed by this method
+    var homepageRoute = new jms.routing.Route("", {
+      module: "home", action: "index"
+    });   
+    var defaults = goog.object.clone(homepageRoute.getDefaults());
+    assertFalse(homepageRoute.matchesHash("users/index/page/1"
+      +"/sortField/email/sortOrder/asc"));
+    assertObjectEquals(defaults, homepageRoute.getDefaults());
+  }
+
+  function testRouteMatchesParameters()
+  {
+    var route = createRoute("", {module: "home", action: "test"});
+    assertFalse(route.matchesParameters({module: "test", action: "test"}));
+    assertTrue(route.matchesParameters({module: "home", action: "test"}));
+
+    var route = createRoute(":module/:action/:page", {}, {page: "(\\d+)"});
+    assertFalse(route.matchesParameters({module: "test"}));
+    assertFalse(route.matchesParameters({module: "test", action: "test", page: "non-numeric"}));
+    assertTrue(route.matchesParameters({module: "test", action: "test", page: "4"}));
+
+    // verify that the input parameters are not altered
+    var params = {module: "users", action: "index", page: 3};
+    var myParams = goog.object.clone(params);
+    var route = createRoute("users/p/:page", {module: "users", action: "index"});
+    assertObjectEquals(myParams, params);
+    assertTrue(route.matchesParameters(params));
+    assertObjectEquals(myParams, params);
+  }
+
+  function testGetParameter()
+  {
+    var route = createRoute(":module/:action");
+    route.matchesHash("test/test2");
+
+    assertEquals(route.getParameter("module"), "test");
+    assertEquals(route.getParameter("action"), "test2");
+    assertEquals(route.getParameter("non-existent", "default"), "default");
+  }
+
+  function testIsBound()
+  {
+    var route = createRoute(":module/:action");
+    route.matchesHash("test/test");
+    assertTrue(route.isBound());
+
+    var route = createRoute("");
+    assertFalse(route.isBound());
+  }
+
+  function testGenerate()
+  {
+    var route = createRoute(":module/:action");
+    assertEquals("section/list/page/1", route.generate({module: "section", action: "list", page: "1"}));
+    assertEquals("section/list", route.generate({module: "section", action: "list"}));
+
+    var route = createRoute("users/p/:page", {module: "users", action: "index"}, {page: "(\\d+)"});
+    assertEquals("users/p/1", route.generate({module: "users", action: "index", page: "1"}));
+
+    // verify that the input parameters are not altered
+    var params = {module: "users", action: "index", page: 3};
+    var myParams = goog.object.clone(params);
+    var route = createRoute("users/:page", {module: "users", action: "index"});
+    assertObjectEquals(myParams, params);
+    assertEquals("users/3", route.generate(params));
+    assertObjectEquals(myParams, params);
+    
+    // a more complex example
+    // test if the behavior changes when routes are called multiple times
+    var route = createRoute("users", {module: "users", action: "index", page: "1"});
+    var routeTwo = createRoute("users/:page", {module: "users", action: "index"}, {page: "(\\d+)"});
+    var params = {
+      module: "users",
+      action: "index",
+      page: 1,
+      sortOrder: "desc",
+      sortField: "email"
+    };
+    for (var i = 0; i < 20; i++) {
+      assertTrue(route.matchesParameters(params));
+      assertEquals("users/sortOrder/desc/sortField/email", route.generate(params));
+      assertTrue(routeTwo.matchesParameters(params));
+      assertEquals("users/1/sortOrder/desc/sortField/email", routeTwo.generate(params));
+    }
+  }
+</script>
+</body>
+</html>
